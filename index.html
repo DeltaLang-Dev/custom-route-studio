@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Custom Route Studio</title>
+    <link rel="manifest" href="manifest.json">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -165,7 +166,7 @@
       document.getElementById('stats').innerText = `${mi} mi (${historyPoints.length} pts)`;
       if (updateUrl) window.location.hash = encodeURIComponent(JSON.stringify(historyPoints));
     }
-
+    
     map.on('click', (e) => addWaypoint(e.latlng, activeMode));
 
     document.getElementById('exportGpxBtn').addEventListener('click', () => {
@@ -206,7 +207,11 @@
       } else {
         navigator.geolocation?.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 14));
       }
-    });
+    });              
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js')
+        .catch(err => console.log('SW registration failed:', err));
+    }
   </script>
 </body>
 </html>
