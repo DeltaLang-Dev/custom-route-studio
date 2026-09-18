@@ -1,68 +1,97 @@
-<!<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Custom Route Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a1a1a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Custom Route Studio</title>
+  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
-    #map { height: 100vh; width: 100vw; }
-    .panel {
-      position: absolute; top: 12px; left: 50px; z-index: 1000;
-      background: #ffffff; padding: 14px 18px; border-radius: 8px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.25); width: 260px;
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #map { height: 100%; width: 100%; z-index: 1; }
+
+    /* Bottom Control Sheet */
+    .sheet {
+      position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+      background: #ffffff; border-radius: 16px 16px 0 0;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.18);
+      padding: 12px 18px 24px; transition: transform 0.3s ease;
+      max-width: 500px; margin: 0 auto;
     }
-    .panel h3 { margin: 0 0 10px 0; font-size: 15px; }
-    .panel label { font-size: 12px; font-weight: bold; color: #555; }
-    .panel select, .panel button { 
-      width: 100%; padding: 8px; margin-top: 6px; font-size: 13px; 
-      border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;
+    .sheet-handle {
+      width: 40px; height: 4px; background: #ddd; border-radius: 2px;
+      margin: 0 auto 10px; cursor: pointer;
     }
-    .btn-action { cursor: pointer; background: #222; color: #fff; border: none !important; font-weight: 600; }
-    .btn-action:hover { background: #444; }
-    .btn-secondary { cursor: pointer; background: #f0f0f0; color: #333; border: 1px solid #ddd; }
-    .btn-secondary:hover { background: #e5e5e5; }
-    .stats { margin-top: 10px; font-size: 12px; color: #333; line-height: 1.4; border-top: 1px solid #eee; padding-top: 8px; }
-    .loading { font-size: 11px; color: #3498db; display: none; margin-top: 4px; }
-    .alert-banner { font-size: 11px; color: #27ae60; margin-top: 6px; display: none; text-align: center; }
+    .header-row {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+    }
+    .header-row h3 { margin: 0; font-size: 16px; font-weight: 700; color: #111; }
+    .stats { font-size: 13px; font-weight: 600; color: #2ecc71; }
+
+    /* Mode Selector Pills */
+    .mode-pills {
+      display: flex; gap: 6px; margin: 10px 0; overflow-x: auto; padding-bottom: 4px;
+    }
+    .pill {
+      flex: 1; min-width: 65px; padding: 8px 4px; font-size: 11px; font-weight: 600;
+      text-align: center; border-radius: 8px; border: 1px solid #ddd;
+      background: #f8f9fa; cursor: pointer; color: #444; white-space: nowrap;
+    }
+    .pill.active { background: #111; color: #fff; border-color: #111; }
+
+    /* Buttons */
+    .btn-grid { display: flex; gap: 8px; margin-top: 10px; }
+    .btn {
+      flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; border: none; text-align: center;
+    }
+    .btn-main { background: #111; color: #fff; }
+    .btn-sub { background: #eee; color: #333; }
+    .loading { font-size: 11px; color: #3498db; text-align: center; display: none; margin: 4px 0; }
+    .alert-banner { font-size: 11px; color: #27ae60; text-align: center; display: none; margin-top: 4px; }
   </style>
 </head>
 <body>
 
-  <div class="panel">
-    <h3>Custom Route Studio</h3>
-    
-    <label for="mode">Next Segment Mode:</label>
-    <select id="mode">
-      <option value="foot">Walk / Jog (Footways)</option>
-      <option value="bike">Bicycle / Skate (Paths & Streets)</option>
-      <option value="driving">Car / Transit Route (Roads)</option>
-      <option value="custom">Off-Grid / Freeform (Straight Line)</option>
-    </select>
+  <div id="map"></div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle" id="sheetHandle"></div>
+    <div class="header-row">
+      <h3>Route Studio</h3>
+      <div class="stats" id="stats">0.00 mi</div>
+    </div>
+
+    <div class="mode-pills" id="modeSelector">
+      <div class="pill active" data-mode="foot">Walk</div>
+      <div class="pill" data-mode="bike">Bike</div>
+      <div class="pill" data-mode="driving">Drive</div>
+      <div class="pill" data-mode="custom">Off-Grid</div>
+    </div>
 
     <div class="loading" id="loading">Tracing streets...</div>
 
-    <div class="stats" id="stats">
-      Waypoints: 0<br>
-      Total Distance: 0.00 mi (0.00 km)
+    <div class="btn-grid">
+      <button class="btn btn-main" id="exportGpxBtn">Save .GPX</button>
+      <button class="btn btn-sub" id="shareBtn">Share</button>
+      <button class="btn btn-sub" id="clearBtn">Reset</button>
     </div>
-
-    <button id="exportGpxBtn" class="btn-action" style="margin-top: 10px;">Download .GPX File</button>
-    <button id="shareBtn" class="btn-secondary">Copy Share Link</button>
-    <button id="clearBtn" class="btn-secondary">Clear Route</button>
     <div class="alert-banner" id="alertBanner">Link copied to clipboard!</div>
   </div>
 
-  <div id="map"></div>
-
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([32.7555, -97.3308], 14);
+    const map = L.map('map', { zoomControl: false }).setView([32.7555, -97.3308], 14);
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '© OpenStreetMap contributors'
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
     const modeColors = {
@@ -72,25 +101,26 @@
       custom: '#9b59b6'
     };
 
-    // Global state
-    let historyPoints = []; // Stores { lat, lng, mode }
-    let rawRouteCoordinates = []; // Stores all lat/lng pairs along the full snapped geometry
+    let activeMode = 'foot';
+    let historyPoints = [];
+    let rawRouteCoordinates = [];
     let totalDistanceMeters = 0;
 
-    // Fetch street route from public OSRM API
-    async function getRouteSegment(coord1, coord2, mode) {
-      const start = `${coord1.lng},${coord1.lat}`;
-      const end = `${coord2.lng},${coord2.lat}`;
-      
-      let profile = 'foot';
-      if (mode === 'bike') profile = 'bike';
-      if (mode === 'driving') profile = 'driving';
+    // Mode selection pill clicks
+    document.querySelectorAll('.pill').forEach(pill => {
+      pill.addEventListener('click', (e) => {
+        document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        activeMode = pill.getAttribute('data-mode');
+      });
+    });
 
-      const url = `https://router.project-osrm.org/route/v1/${profile}/${start};${end}?overview=full&geometries=geojson`;
+    async function getRouteSegment(coord1, coord2, mode) {
+      let profile = mode === 'bike' ? 'bike' : mode === 'driving' ? 'driving' : 'foot';
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${coord1.lng},${coord1.lat};${coord2.lng},${coord2.lat}?overview=full&geometries=geojson`;
       const response = await fetch(url);
-      if (!response.ok) throw new Error('Route API failed');
+      if (!response.ok) return null;
       const data = await response.json();
-      
       if (data.routes && data.routes.length > 0) {
         return {
           coords: data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]),
@@ -100,150 +130,81 @@
       return null;
     }
 
-    // Core point plotter
     async function addWaypoint(latlng, mode, updateUrl = true) {
       const loading = document.getElementById('loading');
-
-      // Add visual node marker
-      L.circleMarker(latlng, {
-        radius: 5,
-        color: modeColors[mode],
-        fillColor: '#ffffff',
-        fillOpacity: 1,
-        weight: 3
-      }).addTo(map);
-
-      historyPoints.push({ lat: latlng.lat, lng: latlng.lng, mode: mode });
+      L.circleMarker(latlng, { radius: 5, color: modeColors[mode], fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(map);
+      historyPoints.push({ lat: latlng.lat, lng: latlng.lng, mode });
 
       if (historyPoints.length === 1) {
         rawRouteCoordinates.push([latlng.lat, latlng.lng]);
       } else {
-        const prevPoint = historyPoints[historyPoints.length - 2];
-
+        const prev = historyPoints[historyPoints.length - 2];
         if (mode === 'custom') {
-          L.polyline([[prevPoint.lat, prevPoint.lng], [latlng.lat, latlng.lng]], {
-            color: modeColors[mode],
-            weight: 4,
-            opacity: 0.8,
-            dashArray: '6, 8'
-          }).addTo(map);
-
+          L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: modeColors[mode], weight: 4, dashArray: '6, 8' }).addTo(map);
           rawRouteCoordinates.push([latlng.lat, latlng.lng]);
-          totalDistanceMeters += L.latLng(prevPoint.lat, prevPoint.lng).distanceTo(latlng);
+          totalDistanceMeters += L.latLng(prev.lat, prev.lng).distanceTo(latlng);
         } else {
           try {
             loading.style.display = 'block';
-            const segment = await getRouteSegment({ lat: prevPoint.lat, lng: prevPoint.lng }, latlng, mode);
+            const segment = await getRouteSegment({ lat: prev.lat, lng: prev.lng }, latlng, mode);
             loading.style.display = 'none';
-
             if (segment) {
-              L.polyline(segment.coords, {
-                color: modeColors[mode],
-                weight: 5,
-                opacity: 0.85
-              }).addTo(map);
-
+              L.polyline(segment.coords, { color: modeColors[mode], weight: 5, opacity: 0.85 }).addTo(map);
               rawRouteCoordinates.push(...segment.coords);
               totalDistanceMeters += segment.distance;
             }
-          } catch (err) {
+          } catch {
             loading.style.display = 'none';
-            L.polyline([[prevPoint.lat, prevPoint.lng], [latlng.lat, latlng.lng]], {
-              color: '#999',
-              weight: 3,
-              dashArray: '4, 4'
-            }).addTo(map);
+            L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: '#999', weight: 3, dashArray: '4, 4' }).addTo(map);
             rawRouteCoordinates.push([latlng.lat, latlng.lng]);
           }
         }
       }
 
-      // Update statistics
-      const distanceKm = (totalDistanceMeters / 1000).toFixed(2);
-      const distanceMi = (totalDistanceMeters * 0.000621371).toFixed(2);
-      document.getElementById('stats').innerHTML = `
-        Waypoints: ${historyPoints.length}<br>
-        Total Distance: ${distanceMi} mi (${distanceKm} km)
-      `;
-
-      // Keep URL hash updated with encoded route
-      if (updateUrl && historyPoints.length > 0) {
-        window.location.hash = encodeURIComponent(JSON.stringify(historyPoints));
-      }
+      const mi = (totalDistanceMeters * 0.000621371).toFixed(2);
+      document.getElementById('stats').innerText = `${mi} mi (${historyPoints.length} pts)`;
+      if (updateUrl) window.location.hash = encodeURIComponent(JSON.stringify(historyPoints));
     }
 
-    // User click trigger
-    map.on('click', (e) => {
-      const mode = document.getElementById('mode').value;
-      addWaypoint(e.latlng, mode);
-    });
+    map.on('click', (e) => addWaypoint(e.latlng, activeMode));
 
-    // 1. Export as GPX file
     document.getElementById('exportGpxBtn').addEventListener('click', () => {
-      if (rawRouteCoordinates.length < 2) {
-        alert('Please plot at least 2 points before exporting.');
-        return;
-      }
-
-      let gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="CustomRouteStudio" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk>
-    <name>My Custom Commute</name>
-    <trkseg>
-`;
-      rawRouteCoordinates.forEach(pt => {
-        gpx += `      <trkpt lat="${pt[0]}" lon="${pt[1]}"></trkpt>\n`;
-      });
-      gpx += `    </trkseg>
-  </trk>
-</gpx>`;
-
+      if (rawRouteCoordinates.length < 2) return alert('Add at least 2 points first!');
+      let gpx = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="CustomRouteStudio"><trk><name>Custom Commute</name><trkseg>`;
+      rawRouteCoordinates.forEach(pt => { gpx += `<trkpt lat="${pt[0]}" lon="${pt[1]}"></trkpt>`; });
+      gpx += `</trkseg></trk></gpx>`;
       const blob = new Blob([gpx], { type: 'application/gpx+xml' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `custom_route_${Date.now()}.gpx`;
+      link.download = `route_${Date.now()}.gpx`;
       link.click();
     });
 
-    // 2. Share route via URL hash
     document.getElementById('shareBtn').addEventListener('click', () => {
-      if (historyPoints.length === 0) {
-        alert('Plot a route first to share!');
-        return;
-      }
+      if (!historyPoints.length) return alert('Build a route first!');
       navigator.clipboard.writeText(window.location.href).then(() => {
-        const banner = document.getElementById('alertBanner');
-        banner.style.display = 'block';
-        setTimeout(() => banner.style.display = 'none', 3000);
+        const b = document.getElementById('alertBanner');
+        b.style.display = 'block';
+        setTimeout(() => b.style.display = 'none', 2500);
       });
     });
 
-    // 3. Clear/Reset
     document.getElementById('clearBtn').addEventListener('click', () => {
       window.location.hash = '';
       location.reload();
     });
 
-    // 4. Auto-load route if shared via URL hash
     window.addEventListener('DOMContentLoaded', async () => {
-      if (window.location.hash && window.location.hash.length > 1) {
+      if (window.location.hash.length > 1) {
         try {
-          const rawData = decodeURIComponent(window.location.hash.substring(1));
-          const parsedPoints = JSON.parse(rawData);
-          if (Array.isArray(parsedPoints) && parsedPoints.length > 0) {
-            map.setView([parsedPoints[0].lat, parsedPoints[0].lng], 14);
-            for (const pt of parsedPoints) {
-              await addWaypoint(L.latLng(pt.lat, pt.lng), pt.mode, false);
-            }
+          const points = JSON.parse(decodeURIComponent(window.location.hash.substring(1)));
+          if (points.length) {
+            map.setView([points[0].lat, points[0].lng], 14);
+            for (const pt of points) await addWaypoint(L.latLng(pt.lat, pt.lng), pt.mode, false);
           }
-        } catch (e) {
-          console.error("Could not parse route from URL hash:", e);
-        }
+        } catch (e) {}
       } else {
-        // Fallback user geolocation
-        navigator.geolocation?.getCurrentPosition(pos => {
-          map.setView([pos.coords.latitude, pos.coords.longitude], 14);
-        });
+        navigator.geolocation?.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 14));
       }
     });
   </script>
