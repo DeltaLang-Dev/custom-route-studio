@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#1a1a1a">
+  <meta name="theme-color" content="#111827">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>ByWay</title>
-    <link rel="manifest" href="manifest.json">
+  <title>ByWay - Custom Route Builder</title>
+  <link rel="manifest" href="manifest.json">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -26,17 +26,26 @@
     }
     .sheet-handle {
       width: 40px; height: 4px; background: #ddd; border-radius: 2px;
-      margin: 0 auto 10px; cursor: pointer;
+      margin: 0 auto 8px; cursor: pointer;
     }
     .header-row {
-      display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
     }
     .header-row h3 { margin: 0; font-size: 16px; font-weight: 700; color: #111; }
-    .stats { font-size: 13px; font-weight: 600; color: #2ecc71; }
+    .stats { font-size: 13px; font-weight: 600; color: #111; }
+
+    /* Eco Impact Dashboard Bar */
+    .eco-bar {
+      display: flex; gap: 8px; background: #ecfdf5; border: 1px solid #a7f3d0;
+      border-radius: 10px; padding: 8px 12px; margin: 8px 0; justify-content: space-around;
+    }
+    .eco-metric { text-align: center; }
+    .eco-val { font-size: 13px; font-weight: 700; color: #059669; }
+    .eco-label { font-size: 10px; text-transform: uppercase; color: #065f46; font-weight: 600; }
 
     /* Mode Selector Pills */
     .mode-pills {
-      display: flex; gap: 6px; margin: 10px 0; overflow-x: auto; padding-bottom: 4px;
+      display: flex; gap: 6px; margin: 8px 0; overflow-x: auto; padding-bottom: 2px;
     }
     .pill {
       flex: 1; min-width: 65px; padding: 8px 4px; font-size: 11px; font-weight: 600;
@@ -46,9 +55,9 @@
     .pill.active { background: #111; color: #fff; border-color: #111; }
 
     /* Buttons */
-    .btn-grid { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-grid { display: flex; gap: 8px; margin-top: 8px; }
     .btn {
-      flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      flex: 1; padding: 9px; border-radius: 8px; font-size: 13px; font-weight: 600;
       cursor: pointer; border: none; text-align: center;
     }
     .btn-main { background: #111; color: #fff; }
@@ -68,6 +77,22 @@
       <div class="stats" id="stats">0.00 mi</div>
     </div>
 
+    <!-- Eco Metrics Dashboard -->
+    <div class="eco-bar">
+      <div class="eco-metric">
+        <div class="eco-val" id="co2Saved">0.0 lbs</div>
+        <div class="eco-label">CO₂ Offset</div>
+      </div>
+      <div class="eco-metric">
+        <div class="eco-val" id="cashSaved">$0.00</div>
+        <div class="eco-label">Gas Saved</div>
+      </div>
+      <div class="eco-metric">
+        <div class="eco-val" id="ecoShare">100%</div>
+        <div class="eco-label">Green Commute</div>
+      </div>
+    </div>
+
     <div class="mode-pills" id="modeSelector">
       <div class="pill active" data-mode="foot">Walk</div>
       <div class="pill" data-mode="bike">Bike</div>
@@ -75,7 +100,7 @@
       <div class="pill" data-mode="custom">Off-Grid</div>
     </div>
 
-    <div class="loading" id="loading">Tracing streets...</div>
+    <div class="loading" id="loading">Tracing route...</div>
 
     <div class="btn-grid">
       <button class="btn btn-main" id="exportGpxBtn">Save .GPX</button>
@@ -105,11 +130,13 @@
     let activeMode = 'foot';
     let historyPoints = [];
     let rawRouteCoordinates = [];
+    
+    // Mileage per mode tracking
+    let distanceByMode = { foot: 0, bike: 0, driving: 0, custom: 0 };
     let totalDistanceMeters = 0;
 
-    // Mode selection pill clicks
     document.querySelectorAll('.pill').forEach(pill => {
-      pill.addEventListener('click', (e) => {
+      pill.addEventListener('click', () => {
         document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         activeMode = pill.getAttribute('data-mode');
@@ -131,6 +158,22 @@
       return null;
     }
 
+    function updateEcoDashboard() {
+      const totalMiles = totalDistanceMeters * 0.000621371;
+      const greenMiles = (distanceByMode.foot + distanceByMode.bike + distanceByMode.custom) * 0.000621371;
+      
+      // EPA baseline: ~404g CO2 per car mile. 453.59g per lb.
+      const lbsCo2Saved = greenMiles * (404 / 453.592);
+      // Average gas savings: ~25 MPG at $3.20/gal (~$0.128/mile)
+      const dollarsSaved = greenMiles * 0.128;
+      const ecoPercentage = totalMiles > 0 ? Math.round((greenMiles / totalMiles) * 100) : 100;
+
+      document.getElementById('co2Saved').innerText = `${lbsCo2Saved.toFixed(1)} lbs`;
+      document.getElementById('cashSaved').innerText = `$${dollarsSaved.toFixed(2)}`;
+      document.getElementById('ecoShare').innerText = `${ecoPercentage}%`;
+      document.getElementById('stats').innerText = `${totalMiles.toFixed(2)} mi (${historyPoints.length} pts)`;
+    }
+
     async function addWaypoint(latlng, mode, updateUrl = true) {
       const loading = document.getElementById('loading');
       L.circleMarker(latlng, { radius: 5, color: modeColors[mode], fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(map);
@@ -140,10 +183,12 @@
         rawRouteCoordinates.push([latlng.lat, latlng.lng]);
       } else {
         const prev = historyPoints[historyPoints.length - 2];
+        let legDistance = 0;
+
         if (mode === 'custom') {
           L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: modeColors[mode], weight: 4, dashArray: '6, 8' }).addTo(map);
           rawRouteCoordinates.push([latlng.lat, latlng.lng]);
-          totalDistanceMeters += L.latLng(prev.lat, prev.lng).distanceTo(latlng);
+          legDistance = L.latLng(prev.lat, prev.lng).distanceTo(latlng);
         } else {
           try {
             loading.style.display = 'block';
@@ -152,32 +197,35 @@
             if (segment) {
               L.polyline(segment.coords, { color: modeColors[mode], weight: 5, opacity: 0.85 }).addTo(map);
               rawRouteCoordinates.push(...segment.coords);
-              totalDistanceMeters += segment.distance;
+              legDistance = segment.distance;
             }
           } catch {
             loading.style.display = 'none';
             L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: '#999', weight: 3, dashArray: '4, 4' }).addTo(map);
             rawRouteCoordinates.push([latlng.lat, latlng.lng]);
+            legDistance = L.latLng(prev.lat, prev.lng).distanceTo(latlng);
           }
         }
+
+        distanceByMode[mode] = (distanceByMode[mode] || 0) + legDistance;
+        totalDistanceMeters += legDistance;
       }
 
-      const mi = (totalDistanceMeters * 0.000621371).toFixed(2);
-      document.getElementById('stats').innerText = `${mi} mi (${historyPoints.length} pts)`;
+      updateEcoDashboard();
       if (updateUrl) window.location.hash = encodeURIComponent(JSON.stringify(historyPoints));
     }
-    
+
     map.on('click', (e) => addWaypoint(e.latlng, activeMode));
 
     document.getElementById('exportGpxBtn').addEventListener('click', () => {
       if (rawRouteCoordinates.length < 2) return alert('Add at least 2 points first!');
-      let gpx = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="CustomRouteStudio"><trk><name>Custom Commute</name><trkseg>`;
+      let gpx = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="ByWay"><trk><name>ByWay Commute</name><trkseg>`;
       rawRouteCoordinates.forEach(pt => { gpx += `<trkpt lat="${pt[0]}" lon="${pt[1]}"></trkpt>`; });
       gpx += `</trkseg></trk></gpx>`;
       const blob = new Blob([gpx], { type: 'application/gpx+xml' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `route_${Date.now()}.gpx`;
+      link.download = `byway_route_${Date.now()}.gpx`;
       link.click();
     });
 
@@ -207,7 +255,8 @@
       } else {
         navigator.geolocation?.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 14));
       }
-    });              
+    });
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js')
         .catch(err => console.log('SW registration failed:', err));
