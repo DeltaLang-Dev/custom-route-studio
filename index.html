@@ -16,7 +16,6 @@
     body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
     #map { height: 100%; width: 100%; z-index: 1; }
 
-    /* Bottom Control Sheet */
     .sheet {
       position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
       background: #ffffff; border-radius: 16px 16px 0 0;
@@ -34,7 +33,6 @@
     .header-row h3 { margin: 0; font-size: 16px; font-weight: 700; color: #111; }
     .stats { font-size: 13px; font-weight: 600; color: #111; }
 
-    /* Eco Impact Dashboard Bar */
     .eco-bar {
       display: flex; gap: 8px; background: #ecfdf5; border: 1px solid #a7f3d0;
       border-radius: 10px; padding: 8px 12px; margin: 8px 0; justify-content: space-around;
@@ -43,18 +41,17 @@
     .eco-val { font-size: 13px; font-weight: 700; color: #059669; }
     .eco-label { font-size: 10px; text-transform: uppercase; color: #065f46; font-weight: 600; }
 
-    /* Mode Selector Pills */
     .mode-pills {
-      display: flex; gap: 6px; margin: 8px 0; overflow-x: auto; padding-bottom: 2px;
+      display: flex; gap: 6px; margin: 8px 0; overflow-x: auto; padding-bottom: 4px;
     }
     .pill {
-      flex: 1; min-width: 65px; padding: 8px 4px; font-size: 11px; font-weight: 600;
+      flex: 1; min-width: 58px; padding: 8px 6px; font-size: 11px; font-weight: 600;
       text-align: center; border-radius: 8px; border: 1px solid #ddd;
       background: #f8f9fa; cursor: pointer; color: #444; white-space: nowrap;
     }
     .pill.active { background: #111; color: #fff; border-color: #111; }
+    .pill-add { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
 
-    /* Buttons */
     .btn-grid { display: flex; gap: 8px; margin-top: 8px; }
     .btn {
       flex: 1; padding: 9px; border-radius: 8px; font-size: 13px; font-weight: 600;
@@ -64,6 +61,21 @@
     .btn-sub { background: #eee; color: #333; }
     .loading { font-size: 11px; color: #3498db; text-align: center; display: none; margin: 4px 0; }
     .alert-banner { font-size: 11px; color: #27ae60; text-align: center; display: none; margin-top: 4px; }
+
+    /* Custom Mode Modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 2000; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal {
+      background: #fff; border-radius: 12px; width: 100%; max-width: 340px;
+      padding: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+    .modal h4 { margin: 0 0 10px; font-size: 15px; }
+    .modal input, .modal select {
+      width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 6px;
+      border: 1px solid #ccc; font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -77,7 +89,6 @@
       <div class="stats" id="stats">0.00 mi</div>
     </div>
 
-    <!-- Eco Metrics Dashboard -->
     <div class="eco-bar">
       <div class="eco-metric">
         <div class="eco-val" id="co2Saved">0.0 lbs</div>
@@ -96,8 +107,10 @@
     <div class="mode-pills" id="modeSelector">
       <div class="pill active" data-mode="foot">Walk</div>
       <div class="pill" data-mode="bike">Bike</div>
+      <div class="pill" data-mode="transit">Transit</div>
       <div class="pill" data-mode="driving">Drive</div>
-      <div class="pill" data-mode="custom">Off-Grid</div>
+      <div class="pill" data-mode="offgrid">Off-Grid</div>
+      <div class="pill pill-add" id="addCustomModeBtn">+ Custom</div>
     </div>
 
     <div class="loading" id="loading">Tracing route...</div>
@@ -108,6 +121,27 @@
       <button class="btn btn-sub" id="clearBtn">Reset</button>
     </div>
     <div class="alert-banner" id="alertBanner">Link copied to clipboard!</div>
+  </div>
+
+  <!-- Custom Mode Dialog -->
+  <div class="modal-overlay" id="customModal">
+    <div class="modal">
+      <h4>Add Custom Commute Mode</h4>
+      <label style="font-size: 12px; color: #555;">Mode Name:</label>
+      <input type="text" id="customName" placeholder="e.g. Skateboard, Rollerblades, Scooter" maxlength="15" />
+      
+      <label style="font-size: 12px; color: #555;">Routing Path Type:</label>
+      <select id="customRouteType">
+        <option value="bike">Paved Trails & Bike Corridors</option>
+        <option value="foot">Sidewalks & Pedestrian Walkways</option>
+        <option value="offgrid">Freeform / Off-Grid Direct Line</option>
+      </select>
+
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button class="btn btn-main" id="saveCustomMode">Add Mode</button>
+        <button class="btn btn-sub" id="cancelCustomMode">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -123,32 +157,69 @@
     const modeColors = {
       foot: '#2ecc71',
       bike: '#3498db',
-      driving: '#e67e22',
-      custom: '#9b59b6'
+      transit: '#f59e0b',
+      driving: '#ef4444',
+      offgrid: '#9b59b6'
     };
 
     let activeMode = 'foot';
+    let customModesRegistry = {}; // Store user-defined modes: { name: { type, color } }
     let historyPoints = [];
     let rawRouteCoordinates = [];
-    
-    // Mileage per mode tracking
-    let distanceByMode = { foot: 0, bike: 0, driving: 0, custom: 0 };
+    let distanceByMode = { foot: 0, bike: 0, transit: 0, driving: 0, offgrid: 0 };
     let totalDistanceMeters = 0;
 
-    document.querySelectorAll('.pill').forEach(pill => {
-      pill.addEventListener('click', () => {
-        document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
-        activeMode = pill.getAttribute('data-mode');
+    function attachPillListeners() {
+      document.querySelectorAll('.pill:not(.pill-add)').forEach(pill => {
+        pill.onclick = () => {
+          document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          activeMode = pill.getAttribute('data-mode');
+        };
       });
-    });
+    }
+    attachPillListeners();
 
-    async function getRouteSegment(coord1, coord2, mode) {
-      let profile = mode === 'bike' ? 'bike' : mode === 'driving' ? 'driving' : 'foot';
+    // Modal controls for "+ Custom"
+    const modal = document.getElementById('customModal');
+    document.getElementById('addCustomModeBtn').onclick = () => { modal.style.display = 'flex'; };
+    document.getElementById('cancelCustomMode').onclick = () => { modal.style.display = 'none'; };
+
+    document.getElementById('saveCustomMode').onclick = () => {
+      const name = document.getElementById('customName').value.trim();
+      const routeType = document.getElementById('customRouteType').value;
+      if (!name) return alert('Please enter a name');
+
+      const modeKey = 'custom_' + Date.now();
+      const colorList = ['#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e'];
+      const randomColor = colorList[Object.keys(customModesRegistry).length % colorList.length];
+
+      modeColors[modeKey] = randomColor;
+      customModesRegistry[modeKey] = { name, routeType };
+      distanceByMode[modeKey] = 0;
+
+      // Add pill to drawer
+      const newPill = document.createElement('div');
+      newPill.className = 'pill active';
+      newPill.setAttribute('data-mode', modeKey);
+      newPill.innerText = name;
+
+      document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      const addBtn = document.getElementById('addCustomModeBtn');
+      addBtn.parentNode.insertBefore(newPill, addBtn);
+
+      activeMode = modeKey;
+      attachPillListeners();
+      modal.style.display = 'none';
+      document.getElementById('customName').value = '';
+    };
+
+    async function getRouteSegment(coord1, coord2, modeType) {
+      let profile = (modeType === 'bike') ? 'bike' : (modeType === 'driving') ? 'driving' : 'foot';
       const url = `https://router.project-osrm.org/route/v1/${profile}/${coord1.lng},${coord1.lat};${coord2.lng},${coord2.lat}?overview=full&geometries=geojson`;
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      const data = await response.json();
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
       if (data.routes && data.routes.length > 0) {
         return {
           coords: data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]),
@@ -160,13 +231,20 @@
 
     function updateEcoDashboard() {
       const totalMiles = totalDistanceMeters * 0.000621371;
-      const greenMiles = (distanceByMode.foot + distanceByMode.bike + distanceByMode.custom) * 0.000621371;
+      let zeroEmissionMeters = distanceByMode.foot + distanceByMode.bike + distanceByMode.offgrid;
       
-      // EPA baseline: ~404g CO2 per car mile. 453.59g per lb.
-      const lbsCo2Saved = greenMiles * (404 / 453.592);
-      // Average gas savings: ~25 MPG at $3.20/gal (~$0.128/mile)
-      const dollarsSaved = greenMiles * 0.128;
-      const ecoPercentage = totalMiles > 0 ? Math.round((greenMiles / totalMiles) * 100) : 100;
+      // Add all custom modes (skating, scootering, etc.) to zero-emission miles
+      Object.keys(customModesRegistry).forEach(k => {
+        zeroEmissionMeters += (distanceByMode[k] || 0);
+      });
+
+      const zeroEmissionMiles = zeroEmissionMeters * 0.000621371;
+      const transitMiles = (distanceByMode.transit || 0) * 0.000621371;
+
+      const gramsSaved = (zeroEmissionMiles * 404) + (transitMiles * 264);
+      const lbsCo2Saved = gramsSaved / 453.592;
+      const dollarsSaved = (zeroEmissionMiles * 0.128) + (transitMiles * 0.08);
+      const ecoPercentage = totalMiles > 0 ? Math.round(((zeroEmissionMiles + transitMiles) / totalMiles) * 100) : 100;
 
       document.getElementById('co2Saved').innerText = `${lbsCo2Saved.toFixed(1)} lbs`;
       document.getElementById('cashSaved').innerText = `$${dollarsSaved.toFixed(2)}`;
@@ -176,7 +254,9 @@
 
     async function addWaypoint(latlng, mode, updateUrl = true) {
       const loading = document.getElementById('loading');
-      L.circleMarker(latlng, { radius: 5, color: modeColors[mode], fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(map);
+      const pointColor = modeColors[mode] || '#333';
+
+      L.circleMarker(latlng, { radius: 5, color: pointColor, fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(map);
       historyPoints.push({ lat: latlng.lat, lng: latlng.lng, mode });
 
       if (historyPoints.length === 1) {
@@ -184,18 +264,28 @@
       } else {
         const prev = historyPoints[historyPoints.length - 2];
         let legDistance = 0;
+        
+        let routingProfile = mode;
+        if (customModesRegistry[mode]) {
+          routingProfile = customModesRegistry[mode].routeType;
+        }
 
-        if (mode === 'custom') {
-          L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: modeColors[mode], weight: 4, dashArray: '6, 8' }).addTo(map);
+        if (routingProfile === 'offgrid') {
+          L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: pointColor, weight: 4, dashArray: '6, 8' }).addTo(map);
           rawRouteCoordinates.push([latlng.lat, latlng.lng]);
           legDistance = L.latLng(prev.lat, prev.lng).distanceTo(latlng);
         } else {
           try {
             loading.style.display = 'block';
-            const segment = await getRouteSegment({ lat: prev.lat, lng: prev.lng }, latlng, mode);
+            const segment = await getRouteSegment({ lat: prev.lat, lng: prev.lng }, latlng, routingProfile);
             loading.style.display = 'none';
             if (segment) {
-              L.polyline(segment.coords, { color: modeColors[mode], weight: 5, opacity: 0.85 }).addTo(map);
+              L.polyline(segment.coords, { 
+                color: pointColor, 
+                weight: 5, 
+                opacity: 0.85,
+                dashArray: mode === 'transit' ? '8, 8' : null
+              }).addTo(map);
               rawRouteCoordinates.push(...segment.coords);
               legDistance = segment.distance;
             }
