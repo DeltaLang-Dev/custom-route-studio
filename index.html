@@ -16,12 +16,22 @@
     body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
     #map { height: 100%; width: 100%; z-index: 1; }
 
+    /* Top Navigation HUD (Turns & Directions) */
+    .nav-hud {
+      display: none; position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
+      background: #111827; color: #ffffff; border-radius: 12px; padding: 12px 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 480px; margin: 0 auto;
+    }
+    .nav-hud-step { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .nav-hud-dist { font-size: 13px; color: #10b981; margin-top: 4px; font-weight: 600; }
+
+    /* Bottom Control Sheet */
     .sheet {
       position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
       background: #ffffff; border-radius: 16px 16px 0 0;
       box-shadow: 0 -4px 20px rgba(0,0,0,0.18);
       padding: 12px 18px 24px; transition: transform 0.3s ease;
-      max-width: 500px; margin: 0 auto;
+      max-width: 500px; margin: 0 auto; max-height: 80vh; overflow-y: auto;
     }
     .sheet-handle {
       width: 40px; height: 4px; background: #ddd; border-radius: 2px;
@@ -58,9 +68,18 @@
       cursor: pointer; border: none; text-align: center;
     }
     .btn-main { background: #111; color: #fff; }
+    .btn-green { background: #059669; color: #fff; }
     .btn-sub { background: #eee; color: #333; }
     .loading { font-size: 11px; color: #3498db; text-align: center; display: none; margin: 4px 0; }
     .alert-banner { font-size: 11px; color: #27ae60; text-align: center; display: none; margin-top: 4px; }
+
+    /* Cue Sheet Directions Drawer */
+    .directions-list {
+      margin-top: 10px; max-height: 180px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 8px; display: none;
+    }
+    .direction-step {
+      font-size: 12px; padding: 6px 0; border-bottom: 1px solid #f3f4f6; color: #374151; display: flex; justify-content: space-between;
+    }
 
     /* Custom Mode Modal */
     .modal-overlay {
@@ -79,6 +98,12 @@
   </style>
 </head>
 <body>
+
+  <!-- Top Navigation HUD -->
+  <div class="nav-hud" id="navHud">
+    <div class="nav-hud-step" id="hudInstruction">⬆️ Head toward first waypoint</div>
+    <div class="nav-hud-dist" id="hudDistance">Upcoming step</div>
+  </div>
 
   <div id="map"></div>
 
@@ -116,11 +141,20 @@
     <div class="loading" id="loading">Tracing route...</div>
 
     <div class="btn-grid">
-      <button class="btn btn-main" id="exportGpxBtn">Save .GPX</button>
+      <button class="btn btn-green" id="startNavBtn">Start Nav</button>
+      <button class="btn btn-sub" id="toggleDirectionsBtn">Directions</button>
       <button class="btn btn-sub" id="shareBtn">Share</button>
       <button class="btn btn-sub" id="clearBtn">Reset</button>
     </div>
+    
+    <div class="btn-grid" style="margin-top: 6px;">
+      <button class="btn btn-main" id="exportGpxBtn">Save .GPX File</button>
+    </div>
+
     <div class="alert-banner" id="alertBanner">Link copied to clipboard!</div>
+
+    <!-- Turn-by-Turn Cue Sheet -->
+    <div class="directions-list" id="directionsList"></div>
   </div>
 
   <!-- Custom Mode Dialog -->
@@ -163,11 +197,14 @@
     };
 
     let activeMode = 'foot';
-    let customModesRegistry = {}; // Store user-defined modes: { name: { type, color } }
+    let customModesRegistry = {};
     let historyPoints = [];
     let rawRouteCoordinates = [];
+    let allManeuvers = []; // Full list of turn-by-turn maneuvers
     let distanceByMode = { foot: 0, bike: 0, transit: 0, driving: 0, offgrid: 0 };
     let totalDistanceMeters = 0;
+    let userLocationMarker = null;
+    let navWatchId = null;
 
     function attachPillListeners() {
       document.querySelectorAll('.pill:not(.pill-add)').forEach(pill => {
@@ -198,7 +235,6 @@
       customModesRegistry[modeKey] = { name, routeType };
       distanceByMode[modeKey] = 0;
 
-      // Add pill to drawer
       const newPill = document.createElement('div');
       newPill.className = 'pill active';
       newPill.setAttribute('data-mode', modeKey);
@@ -214,26 +250,67 @@
       document.getElementById('customName').value = '';
     };
 
+    // Detailed OSRM Routing Query with Maneuver Steps enabled
     async function getRouteSegment(coord1, coord2, modeType) {
       let profile = (modeType === 'bike') ? 'bike' : (modeType === 'driving') ? 'driving' : 'foot';
-      const url = `https://router.project-osrm.org/route/v1/${profile}/${coord1.lng},${coord1.lat};${coord2.lng},${coord2.lat}?overview=full&geometries=geojson`;
+      // steps=true activates detailed turn instructions
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${coord1.lng},${coord1.lat};${coord2.lng},${coord2.lat}?overview=full&geometries=geojson&steps=true`;
       const res = await fetch(url);
       if (!res.ok) return null;
       const data = await res.json();
       if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        let steps = [];
+        if (route.legs && route.legs[0] && route.legs[0].steps) {
+          steps = route.legs[0].steps.map(s => ({
+            instruction: formatManeuver(s.maneuver, s.name),
+            distance: s.distance
+          }));
+        }
         return {
-          coords: data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]),
-          distance: data.routes[0].distance
+          coords: route.geometry.coordinates.map(c => [c[1], c[0]]),
+          distance: route.distance,
+          steps: steps
         };
       }
       return null;
     }
 
+    // Convert raw maneuver data into readable text & icons
+    function formatManeuver(maneuver, streetName) {
+      const name = streetName || "path";
+      const type = maneuver.type;
+      const modifier = maneuver.modifier || "";
+
+      let icon = "⬆️";
+      if (modifier.includes("left")) icon = "⬅️";
+      if (modifier.includes("right")) icon = "➡️";
+      if (type === "depart") return `🏁 Start on ${name}`;
+      if (type === "arrive") return `🎯 Arrive at destination`;
+      if (type === "turn") return `${icon} Turn ${modifier} onto ${name}`;
+      if (type === "continue" || type === "new name") return `⬆️ Continue on ${name}`;
+      return `${icon} ${type} onto ${name}`;
+    }
+
+    function renderDirectionsList() {
+      const list = document.getElementById('directionsList');
+      list.innerHTML = '';
+      if (!allManeuvers.length) {
+        list.innerHTML = '<div style="font-size:12px; color:#888;">No turns recorded yet. Plot a route on the map!</div>';
+        return;
+      }
+      allManeuvers.forEach((step, idx) => {
+        const mi = (step.distance * 0.000621371).toFixed(2);
+        const div = document.createElement('div');
+        div.className = 'direction-step';
+        div.innerHTML = `<span>${idx + 1}. ${step.instruction}</span><b>${mi > 0 ? mi + ' mi' : ''}</b>`;
+        list.appendChild(div);
+      });
+    }
+
     function updateEcoDashboard() {
       const totalMiles = totalDistanceMeters * 0.000621371;
       let zeroEmissionMeters = distanceByMode.foot + distanceByMode.bike + distanceByMode.offgrid;
-      
-      // Add all custom modes (skating, scootering, etc.) to zero-emission miles
       Object.keys(customModesRegistry).forEach(k => {
         zeroEmissionMeters += (distanceByMode[k] || 0);
       });
@@ -261,6 +338,7 @@
 
       if (historyPoints.length === 1) {
         rawRouteCoordinates.push([latlng.lat, latlng.lng]);
+        allManeuvers.push({ instruction: "🏁 Start route", distance: 0 });
       } else {
         const prev = historyPoints[historyPoints.length - 2];
         let legDistance = 0;
@@ -274,6 +352,7 @@
           L.polyline([[prev.lat, prev.lng], [latlng.lat, latlng.lng]], { color: pointColor, weight: 4, dashArray: '6, 8' }).addTo(map);
           rawRouteCoordinates.push([latlng.lat, latlng.lng]);
           legDistance = L.latLng(prev.lat, prev.lng).distanceTo(latlng);
+          allManeuvers.push({ instruction: "🧭 Head off-grid to next waypoint", distance: legDistance });
         } else {
           try {
             loading.style.display = 'block';
@@ -288,6 +367,7 @@
               }).addTo(map);
               rawRouteCoordinates.push(...segment.coords);
               legDistance = segment.distance;
+              if (segment.steps) allManeuvers.push(...segment.steps);
             }
           } catch {
             loading.style.display = 'none';
@@ -302,10 +382,55 @@
       }
 
       updateEcoDashboard();
+      renderDirectionsList();
       if (updateUrl) window.location.hash = encodeURIComponent(JSON.stringify(historyPoints));
     }
 
     map.on('click', (e) => addWaypoint(e.latlng, activeMode));
+
+    // Toggle Turn-by-Turn Cue Sheet
+    document.getElementById('toggleDirectionsBtn').addEventListener('click', () => {
+      const list = document.getElementById('directionsList');
+      list.style.display = list.style.display === 'block' ? 'none' : 'block';
+      renderDirectionsList();
+    });
+
+    // Live Navigation Mode (GPS tracking + Top HUD)
+    document.getElementById('startNavBtn').addEventListener('click', () => {
+      if (rawRouteCoordinates.length < 2) return alert('Plot a route first!');
+      const hud = document.getElementById('navHud');
+      const btn = document.getElementById('startNavBtn');
+
+      if (navWatchId) {
+        // Stop Navigation
+        navigator.geolocation.clearWatch(navWatchId);
+        navWatchId = null;
+        hud.style.display = 'none';
+        btn.innerText = 'Start Nav';
+        btn.className = 'btn btn-green';
+      } else {
+        // Start Navigation
+        hud.style.display = 'block';
+        btn.innerText = 'End Nav';
+        btn.className = 'btn btn-main';
+
+        if (allManeuvers.length > 0) {
+          document.getElementById('hudInstruction').innerText = allManeuvers[0].instruction;
+          const mi = (allManeuvers[0].distance * 0.000621371).toFixed(2);
+          document.getElementById('hudDistance').innerText = mi > 0 ? `In ${mi} miles` : 'Begin navigation';
+        }
+
+        navWatchId = navigator.geolocation.watchPosition(pos => {
+          const latlng = [pos.coords.latitude, pos.coords.longitude];
+          if (!userLocationMarker) {
+            userLocationMarker = L.circleMarker(latlng, { radius: 8, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.9 }).addTo(map);
+          } else {
+            userLocationMarker.setLatLng(latlng);
+          }
+          map.setView(latlng, 17);
+        }, err => console.log(err), { enableHighAccuracy: true });
+      }
+    });
 
     document.getElementById('exportGpxBtn').addEventListener('click', () => {
       if (rawRouteCoordinates.length < 2) return alert('Add at least 2 points first!');
