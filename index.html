@@ -223,9 +223,10 @@
     const map = L.map('map', { zoomControl: false }).setView([32.7555, -97.3308], 14);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-        L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20,
-      attribution: '&copy; OpenStreetMap, &copy; Stadia Maps'
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd',
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap, &copy; CARTO'
     }).addTo(map);
 
     // Neon high-contrast palette
