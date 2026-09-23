@@ -26,7 +26,11 @@
       background: #090d16; color: #f1f5f9; overflow: hidden; 
     }
     #map { height: 100%; width: 100%; z-index: 1; }
-
+    /* Converts standard OSM into crisp Dark Mode with zero watermarks or API limits */
+    .leaflet-tile {
+      filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+    }
+    
     /* Top Sleek HUD */
     .nav-hud {
       display: none; position: absolute; top: 16px; left: 14px; right: 14px; z-index: 1000;
