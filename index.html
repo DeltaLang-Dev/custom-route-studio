@@ -281,10 +281,11 @@
     const map = L.map('map', { zoomControl: false }).setView([32.7555, -97.3308], 14);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 16,
-      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
     }).addTo(map);
+
 
     const modeColors = {
       foot: '#10b981',
