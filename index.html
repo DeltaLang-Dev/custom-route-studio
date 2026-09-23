@@ -14,6 +14,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -27,7 +30,7 @@
     /* Top Sleek HUD */
     .nav-hud {
       display: none; position: absolute; top: 16px; left: 14px; right: 14px; z-index: 1000;
-      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 14px 18px;
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); max-width: 460px; margin: 0 auto;
     }
@@ -37,7 +40,7 @@
     /* Frosted Glass Bottom Sheet */
     .sheet {
       position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
-      background: rgba(11, 15, 25, 0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      background: rgba(11, 15, 25, 0.94); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       border-top: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px 24px 0 0;
       box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
       padding: 12px 18px 26px; max-width: 500px; margin: 0 auto;
@@ -53,7 +56,11 @@
     .app-brand { display: flex; align-items: center; gap: 8px; }
     .brand-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981; }
     .header-row h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.3px; color: #ffffff; }
-    .stats { font-size: 13px; font-weight: 700; color: #94a3b8; }
+    
+    .auth-badge {
+      font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 700; cursor: pointer;
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: #cbd5e1;
+    }
 
     /* Glass Eco Dashboard */
     .eco-bar {
@@ -102,18 +109,18 @@
     .alert-banner { font-size: 12px; color: #34d399; text-align: center; display: none; margin-top: 6px; font-weight: 600; }
 
     /* Cue Sheet Directions */
-    .directions-list {
-      margin-top: 12px; max-height: 180px; overflow-y: auto; border-top: 1px solid rgba(255, 255, 255, 0.08); 
+    .directions-list, .saved-routes-list {
+      margin-top: 12px; max-height: 200px; overflow-y: auto; border-top: 1px solid rgba(255, 255, 255, 0.08); 
       padding-top: 10px; display: none;
     }
-    .direction-step {
+    .direction-step, .saved-route-item {
       font-size: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); color: #cbd5e1;
       display: flex; justify-content: space-between; align-items: center;
     }
 
-    /* Modal */
+    /* Modals */
     .modal-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
       z-index: 2000; align-items: center; justify-content: center; padding: 20px;
     }
@@ -149,7 +156,7 @@
         <div class="brand-dot"></div>
         <h3>ByWay</h3>
       </div>
-      <div class="stats" id="stats">0.00 mi</div>
+      <div class="auth-badge" id="authBadge">Sign In</div>
     </div>
 
     <!-- Eco Metrics Dashboard -->
@@ -182,18 +189,23 @@
     <div class="btn-grid">
       <button class="btn btn-green" id="startNavBtn">Start Nav</button>
       <button class="btn btn-sub" id="toggleDirectionsBtn">Turns</button>
-      <button class="btn btn-sub" id="shareBtn">Share</button>
-      <button class="btn btn-sub" id="clearBtn">Reset</button>
+      <button class="btn btn-sub" id="saveCloudBtn">Save</button>
+      <button class="btn btn-sub" id="myRoutesBtn">My Routes</button>
     </div>
     
     <div class="btn-grid" style="margin-top: 6px;">
       <button class="btn btn-main" id="exportGpxBtn">Export .GPX</button>
+      <button class="btn btn-sub" id="shareBtn">Share</button>
+      <button class="btn btn-sub" id="clearBtn">Reset</button>
     </div>
 
-    <div class="alert-banner" id="alertBanner">Link copied to clipboard!</div>
+    <div class="alert-banner" id="alertBanner">Action completed!</div>
 
-    <!-- Cue Sheet -->
+    <!-- Turn Cue Sheet -->
     <div class="directions-list" id="directionsList"></div>
+
+    <!-- Saved Routes List -->
+    <div class="saved-routes-list" id="savedRoutesList"></div>
   </div>
 
   <!-- Custom Mode Dialog -->
@@ -217,25 +229,65 @@
     </div>
   </div>
 
+  <!-- Auth Dialog (Sign In / Register) -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal">
+      <h4 id="authModalTitle">Sign In to ByWay</h4>
+      <label>Email</label>
+      <input type="email" id="authEmail" placeholder="your@email.com" />
+      
+      <label>Password</label>
+      <input type="password" id="authPassword" placeholder="••••••••" />
+
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-green" id="authSubmitBtn">Continue</button>
+        <button class="btn btn-sub" id="cancelAuthModal">Cancel</button>
+      </div>
+      <div style="text-align:center; margin-top: 10px; font-size: 11px; color: #94a3b8; cursor: pointer;" id="authToggleMode">
+        Need an account? Tap here to Sign Up
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Route Name Dialog -->
+  <div class="modal-overlay" id="saveRouteModal">
+    <div class="modal">
+      <h4>Save Route to Profile</h4>
+      <label>Route Name</label>
+      <input type="text" id="saveRouteName" placeholder="e.g. Scenic Downtown Cruise" maxlength="25" />
+
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-green" id="confirmSaveRouteBtn">Save to Cloud</button>
+        <button class="btn btn-sub" id="cancelSaveRouteBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    // Initialize map with high-contrast CartoDB Dark Matter tiles
+    // --- SUPABASE CLIENT INITIALIZATION ---
+    const SUPABASE_URL = "https://nmpbhgwgkakojodhkmoa.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_oVE8ShFvBy9WfKcQ95gvJw_JASxIewG";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+    let isSignUpMode = false;
+
+    // Map Setup
     const map = L.map('map', { zoomControl: false }).setView([32.7555, -97.3308], 14);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 16,
       attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
     }).addTo(map);
-    
 
-    // Neon high-contrast palette
     const modeColors = {
-      foot: '#10b981',     // Neon emerald
-      bike: '#06b6d4',     // Cyan
-      transit: '#f59e0b',  // Amber
-      driving: '#ef4444',  // Crimson
-      offgrid: '#a855f7'   // Violet
+      foot: '#10b981',
+      bike: '#06b6d4',
+      transit: '#f59e0b',
+      driving: '#ef4444',
+      offgrid: '#a855f7'
     };
 
     let activeMode = 'foot';
@@ -248,6 +300,149 @@
     let userLocationMarker = null;
     let navWatchId = null;
 
+    // --- AUTH & PROFILE HANDLERS ---
+    async function checkAuthSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && session.user) {
+        currentUser = session.user;
+        document.getElementById('authBadge').innerText = currentUser.email.split('@')[0];
+      } else {
+        currentUser = null;
+        document.getElementById('authBadge').innerText = 'Sign In';
+      }
+    }
+    checkAuthSession();
+
+    document.getElementById('authBadge').onclick = () => {
+      if (currentUser) {
+        if (confirm(`Logged in as ${currentUser.email}. Log out?`)) {
+          supabase.auth.signOut().then(() => {
+            currentUser = null;
+            document.getElementById('authBadge').innerText = 'Sign In';
+            showAlert('Logged out successfully');
+          });
+        }
+      } else {
+        document.getElementById('authModal').style.display = 'flex';
+      }
+    };
+
+    document.getElementById('cancelAuthModal').onclick = () => {
+      document.getElementById('authModal').style.display = 'none';
+    };
+
+    document.getElementById('authToggleMode').onclick = () => {
+      isSignUpMode = !isSignUpMode;
+      document.getElementById('authModalTitle').innerText = isSignUpMode ? 'Create ByWay Account' : 'Sign In to ByWay';
+      document.getElementById('authToggleMode').innerText = isSignUpMode ? 'Already have an account? Tap to Sign In' : 'Need an account? Tap here to Sign Up';
+    };
+
+    document.getElementById('authSubmitBtn').onclick = async () => {
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value.trim();
+      if (!email || !password) return alert('Fill in email and password');
+
+      if (isSignUpMode) {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) return alert(error.message);
+        alert('Account created! Please check your email or log in.');
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) return alert(error.message);
+        currentUser = data.user;
+        document.getElementById('authBadge').innerText = currentUser.email.split('@')[0];
+        showAlert('Signed in!');
+      }
+      document.getElementById('authModal').style.display = 'none';
+    };
+
+    // --- SAVE ROUTE TO CLOUD ---
+    document.getElementById('saveCloudBtn').onclick = () => {
+      if (!currentUser) {
+        document.getElementById('authModal').style.display = 'flex';
+        return;
+      }
+      if (rawRouteCoordinates.length < 2) return alert('Plot a route first!');
+      document.getElementById('saveRouteModal').style.display = 'flex';
+    };
+
+    document.getElementById('cancelSaveRouteBtn').onclick = () => {
+      document.getElementById('saveRouteModal').style.display = 'none';
+    };
+
+    document.getElementById('confirmSaveRouteBtn').onclick = async () => {
+      const name = document.getElementById('saveRouteName').value.trim() || 'My Commute';
+      const totalMiles = (totalDistanceMeters * 0.000621371).toFixed(2);
+      const co2Val = parseFloat(document.getElementById('co2Saved').innerText);
+
+      const { data, error } = await supabase.from('user_routes').insert([
+        {
+          user_id: currentUser.id,
+          route_name: name,
+          route_data: historyPoints,
+          total_miles: totalMiles,
+          co2_saved_lbs: co2Val
+        }
+      ]);
+
+      if (error) {
+        alert('Error saving route: ' + error.message);
+      } else {
+        showAlert('Route saved to profile!');
+        document.getElementById('saveRouteModal').style.display = 'none';
+        document.getElementById('saveRouteName').value = '';
+      }
+    };
+
+    // --- MY ROUTES DRAWER ---
+    document.getElementById('myRoutesBtn').onclick = async () => {
+      if (!currentUser) {
+        document.getElementById('authModal').style.display = 'flex';
+        return;
+      }
+
+      const list = document.getElementById('savedRoutesList');
+      list.style.display = list.style.display === 'block' ? 'none' : 'block';
+
+      if (list.style.display === 'block') {
+        list.innerHTML = '<div style="font-size:12px; color:#64748b; text-align:center;">Loading routes...</div>';
+        const { data, error } = await supabase.from('user_routes').select('*').order('created_at', { ascending: false });
+        
+        if (error || !data.length) {
+          list.innerHTML = '<div style="font-size:12px; color:#64748b; text-align:center;">No saved routes found.</div>';
+          return;
+        }
+
+        list.innerHTML = '';
+        data.forEach(route => {
+          const item = document.createElement('div');
+          item.className = 'saved-route-item';
+          item.innerHTML = `
+            <div>
+              <b style="color:#fff;">${route.route_name}</b><br>
+              <span style="font-size:11px; color:#94a3b8;">${route.total_miles} mi • ${route.co2_saved_lbs} lbs CO₂</span>
+            </div>
+            <button class="btn btn-sub" style="padding:4px 8px; font-size:11px;" onclick="loadSavedRoute('${encodeURIComponent(JSON.stringify(route.route_data))}')">Load</button>
+          `;
+          list.appendChild(item);
+        });
+      }
+    };
+
+    window.loadSavedRoute = async (encodedData) => {
+      const points = JSON.parse(decodeURIComponent(encodedData));
+      window.location.hash = encodeURIComponent(JSON.stringify(points));
+      location.reload();
+    };
+
+    function showAlert(msg) {
+      const b = document.getElementById('alertBanner');
+      b.innerText = msg;
+      b.style.display = 'block';
+      setTimeout(() => b.style.display = 'none', 2500);
+    }
+
+    // --- MODE CONTROLS ---
     function attachPillListeners() {
       document.querySelectorAll('.pill:not(.pill-add)').forEach(pill => {
         pill.onclick = () => {
@@ -364,14 +559,12 @@
       document.getElementById('co2Saved').innerText = `${lbsCo2Saved.toFixed(1)} lbs`;
       document.getElementById('cashSaved').innerText = `$${dollarsSaved.toFixed(2)}`;
       document.getElementById('ecoShare').innerText = `${ecoPercentage}%`;
-      document.getElementById('stats').innerText = `${totalMiles.toFixed(2)} mi (${historyPoints.length} pts)`;
     }
 
     async function addWaypoint(latlng, mode, updateUrl = true) {
       const loading = document.getElementById('loading');
       const pointColor = modeColors[mode] || '#ffffff';
 
-      // Modern pulsing node marker
       L.circleMarker(latlng, { 
         radius: 6, color: pointColor, fillColor: '#090d16', fillOpacity: 1, weight: 3 
       }).addTo(map);
@@ -403,7 +596,6 @@
             const segment = await getRouteSegment({ lat: prev.lat, lng: prev.lng }, latlng, routingProfile);
             loading.style.display = 'none';
             if (segment) {
-              // Glowing polyline
               L.polyline(segment.coords, { 
                 color: pointColor, 
                 weight: 5, 
@@ -488,9 +680,7 @@
     document.getElementById('shareBtn').addEventListener('click', () => {
       if (!historyPoints.length) return alert('Build a route first!');
       navigator.clipboard.writeText(window.location.href).then(() => {
-        const b = document.getElementById('alertBanner');
-        b.style.display = 'block';
-        setTimeout(() => b.style.display = 'none', 2500);
+        showAlert('Link copied to clipboard!');
       });
     });
 
