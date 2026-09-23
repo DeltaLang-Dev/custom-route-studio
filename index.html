@@ -15,8 +15,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   
-  <!-- Supabase JS Client -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Supabase JS Client (Latest) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.1/dist/umd/supabase.js"></script>
 
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -25,12 +25,13 @@
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; 
       background: #090d16; color: #f1f5f9; overflow: hidden; 
     }
-    #map { height: 100%; width: 100%; z-index: 1; }
-    /* Converts standard OSM into crisp Dark Mode with zero watermarks or API limits */
+    #map { height: 100%; width: 100%; z-index: 1; background: #111827; }
+
+    /* Clean Dark Mode Tile Inversion: Zero watermark, 100% reliable */
     .leaflet-tile {
       filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
     }
-    
+
     /* Top Sleek HUD */
     .nav-hud {
       display: none; position: absolute; top: 16px; left: 14px; right: 14px; z-index: 1000;
@@ -62,7 +63,7 @@
     .header-row h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.3px; color: #ffffff; }
     
     .auth-badge {
-      font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 700; cursor: pointer;
+      font-size: 11px; padding: 5px 12px; border-radius: 20px; font-weight: 700; cursor: pointer;
       background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: #cbd5e1;
     }
 
@@ -269,23 +270,30 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    // --- SUPABASE CLIENT INITIALIZATION ---
-    const SUPABASE_URL = "https://nmpbhgwgkakojodhkmoa.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_oVE8ShFvBy9WfKcQ95gvJw_JASxIewG";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    let currentUser = null;
-    let isSignUpMode = false;
-
-    // Map Setup
+    // --- 1. INITIALIZE MAP IMMEDIATELY (Never blocked) ---
     const map = L.map('map', { zoomControl: false }).setView([32.7555, -97.3308], 14);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Standard OSM with dark mode CSS filter
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
+      attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
+    // --- 2. INITIALIZE SUPABASE SAFELY ---
+    const SUPABASE_URL = "https://nmpbhgwgkakojodhkmoa.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_oVE8ShFvBy9WfKcQ95gvJw_JASxIewG";
+    let supabase = null;
+    let currentUser = null;
+    let isSignUpMode = false;
+
+    try {
+      if (window.supabase && window.supabase.createClient) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      }
+    } catch (e) {
+      console.warn("Supabase initialization error:", e);
+    }
 
     const modeColors = {
       foot: '#10b981',
@@ -305,15 +313,20 @@
     let userLocationMarker = null;
     let navWatchId = null;
 
-    // --- AUTH & PROFILE HANDLERS ---
+    // --- 3. AUTH & PROFILE HANDLERS ---
     async function checkAuthSession() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && session.user) {
-        currentUser = session.user;
-        document.getElementById('authBadge').innerText = currentUser.email.split('@')[0];
-      } else {
-        currentUser = null;
-        document.getElementById('authBadge').innerText = 'Sign In';
+      if (!supabase) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user) {
+          currentUser = session.user;
+          document.getElementById('authBadge').innerText = currentUser.email.split('@')[0];
+        } else {
+          currentUser = null;
+          document.getElementById('authBadge').innerText = 'Sign In';
+        }
+      } catch (err) {
+        console.log("Session check error:", err);
       }
     }
     checkAuthSession();
@@ -321,11 +334,13 @@
     document.getElementById('authBadge').onclick = () => {
       if (currentUser) {
         if (confirm(`Logged in as ${currentUser.email}. Log out?`)) {
-          supabase.auth.signOut().then(() => {
-            currentUser = null;
-            document.getElementById('authBadge').innerText = 'Sign In';
-            showAlert('Logged out successfully');
-          });
+          if (supabase) {
+            supabase.auth.signOut().then(() => {
+              currentUser = null;
+              document.getElementById('authBadge').innerText = 'Sign In';
+              showAlert('Logged out');
+            });
+          }
         }
       } else {
         document.getElementById('authModal').style.display = 'flex';
@@ -343,25 +358,30 @@
     };
 
     document.getElementById('authSubmitBtn').onclick = async () => {
+      if (!supabase) return alert('Database connection not ready.');
       const email = document.getElementById('authEmail').value.trim();
       const password = document.getElementById('authPassword').value.trim();
-      if (!email || !password) return alert('Fill in email and password');
+      if (!email || !password) return alert('Enter both email and password');
 
-      if (isSignUpMode) {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) return alert(error.message);
-        alert('Account created! Please check your email or log in.');
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return alert(error.message);
-        currentUser = data.user;
-        document.getElementById('authBadge').innerText = currentUser.email.split('@')[0];
-        showAlert('Signed in!');
+      try {
+        if (isSignUpMode) {
+          const { data, error } = await supabase.auth.signUp({ email, password });
+          if (error) return alert(error.message);
+          alert('Account created! You can now log in.');
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) return alert(error.message);
+          currentUser = data.user;
+          document.getElementById('authBadge').innerText = currentUser.email.split('@')[0];
+          showAlert('Signed in!');
+        }
+        document.getElementById('authModal').style.display = 'none';
+      } catch (err) {
+        alert(err.message || 'Authentication failed');
       }
-      document.getElementById('authModal').style.display = 'none';
     };
 
-    // --- SAVE ROUTE TO CLOUD ---
+    // --- 4. CLOUD SAVE & ROUTE RETRIEVAL ---
     document.getElementById('saveCloudBtn').onclick = () => {
       if (!currentUser) {
         document.getElementById('authModal').style.display = 'flex';
@@ -376,9 +396,10 @@
     };
 
     document.getElementById('confirmSaveRouteBtn').onclick = async () => {
+      if (!supabase) return;
       const name = document.getElementById('saveRouteName').value.trim() || 'My Commute';
       const totalMiles = (totalDistanceMeters * 0.000621371).toFixed(2);
-      const co2Val = parseFloat(document.getElementById('co2Saved').innerText);
+      const co2Val = parseFloat(document.getElementById('co2Saved').innerText) || 0;
 
       const { data, error } = await supabase.from('user_routes').insert([
         {
@@ -399,7 +420,6 @@
       }
     };
 
-    // --- MY ROUTES DRAWER ---
     document.getElementById('myRoutesBtn').onclick = async () => {
       if (!currentUser) {
         document.getElementById('authModal').style.display = 'flex';
@@ -413,7 +433,7 @@
         list.innerHTML = '<div style="font-size:12px; color:#64748b; text-align:center;">Loading routes...</div>';
         const { data, error } = await supabase.from('user_routes').select('*').order('created_at', { ascending: false });
         
-        if (error || !data.length) {
+        if (error || !data || !data.length) {
           list.innerHTML = '<div style="font-size:12px; color:#64748b; text-align:center;">No saved routes found.</div>';
           return;
         }
@@ -447,7 +467,7 @@
       setTimeout(() => b.style.display = 'none', 2500);
     }
 
-    // --- MODE CONTROLS ---
+    // --- 5. MODE PILLS ---
     function attachPillListeners() {
       document.querySelectorAll('.pill:not(.pill-add)').forEach(pill => {
         pill.onclick = () => {
@@ -459,9 +479,9 @@
     }
     attachPillListeners();
 
-    const modal = document.getElementById('customModal');
-    document.getElementById('addCustomModeBtn').onclick = () => { modal.style.display = 'flex'; };
-    document.getElementById('cancelCustomMode').onclick = () => { modal.style.display = 'none'; };
+    const customModal = document.getElementById('customModal');
+    document.getElementById('addCustomModeBtn').onclick = () => { customModal.style.display = 'flex'; };
+    document.getElementById('cancelCustomMode').onclick = () => { customModal.style.display = 'none'; };
 
     document.getElementById('saveCustomMode').onclick = () => {
       const name = document.getElementById('customName').value.trim();
@@ -487,10 +507,11 @@
 
       activeMode = modeKey;
       attachPillListeners();
-      modal.style.display = 'none';
+      customModal.style.display = 'none';
       document.getElementById('customName').value = '';
     };
 
+    // --- 6. ROUTE CALCULATION & NAVIGATION ---
     async function getRouteSegment(coord1, coord2, modeType) {
       let profile = (modeType === 'bike') ? 'bike' : (modeType === 'driving') ? 'driving' : 'foot';
       const url = `https://router.project-osrm.org/route/v1/${profile}/${coord1.lng},${coord1.lat};${coord2.lng},${coord2.lat}?overview=full&geometries=geojson&steps=true`;
@@ -564,6 +585,7 @@
       document.getElementById('co2Saved').innerText = `${lbsCo2Saved.toFixed(1)} lbs`;
       document.getElementById('cashSaved').innerText = `$${dollarsSaved.toFixed(2)}`;
       document.getElementById('ecoShare').innerText = `${ecoPercentage}%`;
+      document.getElementById('stats').innerText = `${totalMiles.toFixed(2)} mi (${historyPoints.length} pts)`;
     }
 
     async function addWaypoint(latlng, mode, updateUrl = true) {
